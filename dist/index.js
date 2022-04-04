@@ -266,15 +266,17 @@ exports.CommitOptions = CommitOptions;
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.CommitSubjectParser = exports.commitSubjectBelongsToAQueue = exports.COMMIT_SUBJECT_JOB_REF_PREFIX = exports.COMMIT_SUBJECT_DELIMITER = exports.COMMIT_SUBJECT_PREFIX = void 0;
+exports.CommitSubjectParser = exports.commitSubjectBelongsToAQueue = exports.COMMIT_SUBJECT_JOB_ID_PREFIX = exports.COMMIT_SUBJECT_JOB_REF_PREFIX = exports.COMMIT_SUBJECT_DELIMITER = exports.COMMIT_SUBJECT_PREFIX = void 0;
 const commit_hash_1 = __nccwpck_require__(5533);
 const errors_1 = __nccwpck_require__(9292);
 const commit_subject_1 = __nccwpck_require__(8798);
 const message_key_1 = __nccwpck_require__(493);
+const job_1 = __nccwpck_require__(6420);
 const queue_name_1 = __nccwpck_require__(7894);
 exports.COMMIT_SUBJECT_PREFIX = '📝';
 exports.COMMIT_SUBJECT_DELIMITER = ':';
 exports.COMMIT_SUBJECT_JOB_REF_PREFIX = 'job.ref.';
+exports.COMMIT_SUBJECT_JOB_ID_PREFIX = 'job.id.';
 function commitSubjectBelongsToAQueue(subject) {
     return CommitSubjectParser.commitSubjectBelongsToAQueue(subject);
 }
@@ -288,12 +290,14 @@ class CommitSubjectParser {
     }
     static parseText(text) {
         const parser = new CommitSubjectParser(text);
-        return new commit_subject_1.CommitSubject(parser.getMessageKey(), parser.getQueueName(), parser.getJobRef());
+        return new commit_subject_1.CommitSubject(parser.getMessageKey(), parser.getQueueName(), parser.getJobRef(), parser.getJobId());
     }
     static toText(commitSubject) {
         const jobRef = commitSubject.getJobRef().isNull()
             ? ''
-            : `${exports.COMMIT_SUBJECT_DELIMITER} ${exports.COMMIT_SUBJECT_JOB_REF_PREFIX}${commitSubject
+            : `${exports.COMMIT_SUBJECT_DELIMITER} ${exports.COMMIT_SUBJECT_JOB_ID_PREFIX}${commitSubject
+                .getJobId()
+                .toString()} ${exports.COMMIT_SUBJECT_JOB_REF_PREFIX}${commitSubject
                 .getJobRef()
                 .toString()}`;
         return `${exports.COMMIT_SUBJECT_PREFIX}${commitSubject
@@ -335,6 +339,19 @@ class CommitSubjectParser {
         }
         return new commit_hash_1.CommitHash(commitHash);
     }
+    getJobId() {
+        const jobIdPosition = this.text.indexOf(exports.COMMIT_SUBJECT_JOB_ID_PREFIX);
+        if (jobIdPosition === -1) {
+            return job_1.NO_JOB_ID;
+        }
+        const jobId = parseInt(this.text
+            .substring(jobIdPosition + exports.COMMIT_SUBJECT_JOB_ID_PREFIX.length, this.text.indexOf(' ', jobIdPosition))
+            .trim());
+        if (isNaN(jobId)) {
+            return job_1.NO_JOB_ID;
+        }
+        return jobId;
+    }
 }
 exports.CommitSubjectParser = CommitSubjectParser;
 
@@ -350,17 +367,18 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.CommitSubject = void 0;
 const commit_subject_parser_1 = __nccwpck_require__(386);
 /* The first line of a commit message.
- * Format: {COMMIT_SUBJECT_PREFIX}{MESSAGE_KEY}: {QUEUE_NAME}: job.ref.{COMMIT_HASH}
- * Example: 📝✅: queue_name: job.ref.1e31b549c630f806961a291b4e3d4a1471f37490
+ * Format: {COMMIT_SUBJECT_PREFIX}{MESSAGE_KEY}: {QUEUE_NAME}: job.{JOB_ID} job.ref.{COMMIT_HASH}
+ * Example: 📝✅: queue_name: job.42 job.ref.1e31b549c630f806961a291b4e3d4a1471f37490
  */
 class CommitSubject {
-    constructor(messageKey, queueName, jobRef) {
+    constructor(messageKey, queueName, jobRef, id) {
         this.messageKey = messageKey;
         this.queueName = queueName;
         this.jobRef = jobRef;
+        this.id = id;
     }
     static fromMessageAndQueueName(message, queueName) {
-        return new CommitSubject(message.getKey(), queueName, message.getJobRef());
+        return new CommitSubject(message.getKey(), queueName, message.getJobRef(), message.getId());
     }
     toString() {
         return commit_subject_parser_1.CommitSubjectParser.toText(this);
@@ -379,6 +397,9 @@ class CommitSubject {
     }
     getJobRef() {
         return this.jobRef;
+    }
+    getJobId() {
+        return this.id;
     }
 }
 exports.CommitSubject = CommitSubject;
@@ -1000,16 +1021,18 @@ exports.getGnupgHome = getGnupgHome;
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.nullJob = exports.Job = void 0;
+exports.nullJob = exports.Job = exports.NO_JOB_ID = void 0;
 const commit_hash_1 = __nccwpck_require__(5533);
 const NO_JOB = '--no-job--';
+exports.NO_JOB_ID = -1;
 class Job {
-    constructor(payload, commitHash) {
+    constructor(payload, commitHash, id) {
         this.payload = payload;
         this.commitHash = commitHash;
+        this.id = id;
     }
     static fromCommittedMessage(newJobCommittedMessage) {
-        return new Job(newJobCommittedMessage.payload(), newJobCommittedMessage.commitHash());
+        return new Job(newJobCommittedMessage.payload(), newJobCommittedMessage.commitHash(), exports.NO_JOB_ID);
     }
     getPayload() {
         return this.payload;
@@ -1017,17 +1040,21 @@ class Job {
     getCommitHash() {
         return this.commitHash;
     }
+    getId() {
+        return this.id;
+    }
     isNull() {
         return this.payload === NO_JOB && this.commitHash.isNull();
     }
     equalsTo(other) {
         return (this.payload === other.getPayload() &&
-            this.commitHash.equalsTo(other.getCommitHash()));
+            this.commitHash.equalsTo(other.getCommitHash()) &&
+            this.id === other.id);
     }
 }
 exports.Job = Job;
 function nullJob() {
-    return new Job(NO_JOB, (0, commit_hash_1.nullCommitHash)());
+    return new Job(NO_JOB, (0, commit_hash_1.nullCommitHash)(), exports.NO_JOB_ID);
 }
 exports.nullJob = nullJob;
 
@@ -1231,10 +1258,12 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.JobStartedMessage = exports.JobFinishedMessage = exports.NewJobMessage = exports.Message = void 0;
 const commit_hash_1 = __nccwpck_require__(5533);
 const message_key_1 = __nccwpck_require__(493);
+const job_1 = __nccwpck_require__(6420);
 class Message {
-    constructor(payload, jobRef = (0, commit_hash_1.nullCommitHash)()) {
+    constructor(payload, jobRef = (0, commit_hash_1.nullCommitHash)(), id = job_1.NO_JOB_ID) {
         this.payload = payload;
         this.jobRef = jobRef;
+        this.id = id;
     }
     getPayload() {
         return this.payload;
@@ -1242,8 +1271,14 @@ class Message {
     getJobRef() {
         return this.jobRef;
     }
+    getId() {
+        return this.id;
+    }
     hasJobRef() {
         return !this.jobRef.isNull();
+    }
+    hasId() {
+        return this.id !== job_1.NO_JOB_ID;
     }
 }
 exports.Message = Message;
@@ -1442,10 +1477,12 @@ class Queue {
     // Job states: new -> started -> finished
     createJob(payload) {
         return __awaiter(this, void 0, void 0, function* () {
-            this.guardThatLastMessageWasJobFinishedOrNull(this.getLatestMessage());
+            const latestMessage = this.getLatestMessage();
+            this.guardThatLastMessageWasJobFinishedOrNull(latestMessage);
             const message = new message_1.NewJobMessage(payload);
             const commit = yield this.commitMessage(message);
-            return new job_1.Job(payload, commit.hash);
+            const newJobId = 0; //latestMessage.isNull() ? 0 : latestMessage.getIdFromMessage() + 1
+            return new job_1.Job(payload, commit.hash, newJobId);
         });
     }
     markJobAsStarted(payload) {
