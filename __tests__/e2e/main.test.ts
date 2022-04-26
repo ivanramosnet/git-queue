@@ -203,6 +203,44 @@ describe('GitHub Action', () => {
     )
   })
 
+  it('should assign job id 0 to the first created job', async () => {
+    const gitRepo = await createInitializedGitRepo()
+
+    const output = createJob(gitRepo)
+
+    expect(getOutputVariable('job_id', output.toString())).toBe('0')
+  })
+
+  it('should assign job id 1 to the second created job', async () => {
+    const gitRepo = await createInitializedGitRepo()
+
+    const firstOutput = createJob(gitRepo)
+
+    expect(getOutputVariable('job_id', firstOutput.toString())).toBe('0')
+
+    executeAction({
+      ...process.env,
+      INPUT_QUEUE_NAME: 'queue-name',
+      INPUT_GIT_REPO_DIR: gitRepo.getDirPath(),
+      INPUT_ACTION: 'start-job',
+      INPUT_GIT_COMMIT_NO_GPG_SIGN: 'true',
+      INPUT_JOB_PAYLOAD: 'test'
+    })
+
+    executeAction({
+      ...process.env,
+      INPUT_QUEUE_NAME: 'queue-name',
+      INPUT_GIT_REPO_DIR: gitRepo.getDirPath(),
+      INPUT_ACTION: 'finish-job',
+      INPUT_GIT_COMMIT_NO_GPG_SIGN: 'true',
+      INPUT_JOB_PAYLOAD: 'test'
+    })
+
+    const output = createJob(gitRepo)
+
+    expect(getOutputVariable('job_id', output.toString())).toBe('1')
+  })
+
   it('should allow to overwrite commit signing key', async () => {
     const gitRepo = await createInitializedGitRepo()
     const gnuPGHomeDir = await createInitializedTempGnuPGHomeDir()

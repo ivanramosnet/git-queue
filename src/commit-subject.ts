@@ -12,13 +12,13 @@ export class CommitSubject {
   private messageKey: MessageKey
   private queueName: QueueName
   private jobRef: CommitHash
-  private id: Number
+  private id: number
 
   constructor(
     messageKey: MessageKey,
     queueName: QueueName,
     jobRef: CommitHash,
-    id: Number
+    id: number
   ) {
     this.messageKey = messageKey
     this.queueName = queueName
@@ -62,7 +62,7 @@ export class CommitSubject {
     return this.jobRef
   }
 
-  getJobId(): Number {
+  getJobId(): number {
     return this.id
   }
 }

@@ -271,7 +271,6 @@ const commit_hash_1 = __nccwpck_require__(5533);
 const errors_1 = __nccwpck_require__(9292);
 const commit_subject_1 = __nccwpck_require__(8798);
 const message_key_1 = __nccwpck_require__(493);
-const job_1 = __nccwpck_require__(6420);
 const queue_name_1 = __nccwpck_require__(7894);
 exports.COMMIT_SUBJECT_PREFIX = '📝';
 exports.COMMIT_SUBJECT_DELIMITER = ':';
@@ -295,16 +294,19 @@ class CommitSubjectParser {
     static toText(commitSubject) {
         const jobRef = commitSubject.getJobRef().isNull()
             ? ''
-            : `${exports.COMMIT_SUBJECT_DELIMITER} ${exports.COMMIT_SUBJECT_JOB_ID_PREFIX}${commitSubject
-                .getJobId()
-                .toString()} ${exports.COMMIT_SUBJECT_JOB_REF_PREFIX}${commitSubject
+            : ` ${exports.COMMIT_SUBJECT_JOB_REF_PREFIX}${commitSubject
                 .getJobRef()
+                .toString()}`;
+        const jobId = commitSubject.getJobId() === -1
+            ? ''
+            : ` ${exports.COMMIT_SUBJECT_JOB_ID_PREFIX}${commitSubject
+                .getJobId()
                 .toString()}`;
         return `${exports.COMMIT_SUBJECT_PREFIX}${commitSubject
             .getMessageKey()
             .toString()}${exports.COMMIT_SUBJECT_DELIMITER} ${commitSubject
             .getQueueName()
-            .toString()}${jobRef}`;
+            .toString()}${exports.COMMIT_SUBJECT_DELIMITER}${jobId}${jobRef}`;
     }
     getQueueName() {
         const parts = this.text.split(exports.COMMIT_SUBJECT_DELIMITER);
@@ -342,13 +344,14 @@ class CommitSubjectParser {
     getJobId() {
         const jobIdPosition = this.text.indexOf(exports.COMMIT_SUBJECT_JOB_ID_PREFIX);
         if (jobIdPosition === -1) {
-            return job_1.NO_JOB_ID;
+            throw new errors_1.MissingJobIdInCommitSubjectError(this.text);
         }
+        const nextTokenPosition = this.text.indexOf(' ', jobIdPosition);
         const jobId = parseInt(this.text
-            .substring(jobIdPosition + exports.COMMIT_SUBJECT_JOB_ID_PREFIX.length, this.text.indexOf(' ', jobIdPosition))
+            .substring(jobIdPosition + exports.COMMIT_SUBJECT_JOB_ID_PREFIX.length, nextTokenPosition === -1 ? this.text.length : nextTokenPosition)
             .trim());
         if (isNaN(jobId)) {
-            return job_1.NO_JOB_ID;
+            throw new errors_1.MissingJobIdInCommitSubjectError(this.text);
         }
         return jobId;
     }
@@ -503,6 +506,9 @@ class CommittedMessage {
     }
     commitSubject() {
         return commit_subject_parser_1.CommitSubjectParser.parseText(this.commit.message);
+    }
+    jobId() {
+        return commit_subject_parser_1.CommitSubjectParser.parseText(this.commit.message).getJobId();
     }
     payload() {
         return new commit_body_1.CommitBody(this.commit.body).getPayload();
@@ -723,7 +729,7 @@ exports.getErrorMessage = getErrorMessage;
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.InvalidCommitBodyError = exports.InvalidShortHashError = exports.InvalidHashError = exports.QueueNameNotValidError = exports.MissingNewJobMessageError = exports.MissingJobStartedMessageError = exports.PendingJobsLimitReachedError = exports.GitDirNotFoundError = exports.GitDirNotInitializedError = exports.InvalidMessageKeyError = exports.MissingCommitHashInJobReferenceError = exports.MissingMessageKeyInCommitSubjectError = exports.MissingQueueNameInCommitSubjectError = void 0;
+exports.InvalidCommitBodyError = exports.InvalidShortHashError = exports.InvalidHashError = exports.QueueNameNotValidError = exports.MissingNewJobMessageError = exports.MissingJobStartedMessageError = exports.PendingJobsLimitReachedError = exports.GitDirNotFoundError = exports.GitDirNotInitializedError = exports.InvalidMessageKeyError = exports.MissingCommitHashInJobReferenceError = exports.MissingJobIdInCommitSubjectError = exports.MissingMessageKeyInCommitSubjectError = exports.MissingQueueNameInCommitSubjectError = void 0;
 const queue_name_1 = __nccwpck_require__(7894);
 class MissingQueueNameInCommitSubjectError extends Error {
     constructor(commitSubject) {
@@ -739,6 +745,13 @@ class MissingMessageKeyInCommitSubjectError extends Error {
     }
 }
 exports.MissingMessageKeyInCommitSubjectError = MissingMessageKeyInCommitSubjectError;
+class MissingJobIdInCommitSubjectError extends Error {
+    constructor(commitSubject) {
+        super(`Missing job ID in commit subject: ${commitSubject}`);
+        Object.setPrototypeOf(this, MissingJobIdInCommitSubjectError.prototype);
+    }
+}
+exports.MissingJobIdInCommitSubjectError = MissingJobIdInCommitSubjectError;
 class MissingCommitHashInJobReferenceError extends Error {
     constructor(commitSubject) {
         super(`Missing commit hash in job reference in commit subject: ${commitSubject}`);
@@ -1032,7 +1045,7 @@ class Job {
         this.id = id;
     }
     static fromCommittedMessage(newJobCommittedMessage) {
-        return new Job(newJobCommittedMessage.payload(), newJobCommittedMessage.commitHash(), exports.NO_JOB_ID);
+        return new Job(newJobCommittedMessage.payload(), newJobCommittedMessage.commitHash(), newJobCommittedMessage.jobId());
     }
     getPayload() {
         return this.payload;
@@ -1173,8 +1186,10 @@ function run() {
                     yield core.group(`Setting outputs`, () => __awaiter(this, void 0, void 0, function* () {
                         context.setOutput('job_created', !job.getCommitHash().isNull());
                         context.setOutput('job_commit', job.getCommitHash().toString());
+                        context.setOutput('job_id', job.getId().toString());
                         core.info(`job_created: ${!job.getCommitHash().isNull()}`);
                         core.info(`job_commit: ${job.getCommitHash().toString()}`);
+                        core.info(`job_id: ${job.getId().toString()}`);
                     }));
                     break;
                 }
@@ -1260,7 +1275,7 @@ const commit_hash_1 = __nccwpck_require__(5533);
 const message_key_1 = __nccwpck_require__(493);
 const job_1 = __nccwpck_require__(6420);
 class Message {
-    constructor(payload, jobRef = (0, commit_hash_1.nullCommitHash)(), id = job_1.NO_JOB_ID) {
+    constructor(payload, jobRef = (0, commit_hash_1.nullCommitHash)(), id) {
         this.payload = payload;
         this.jobRef = jobRef;
         this.id = id;
@@ -1283,8 +1298,8 @@ class Message {
 }
 exports.Message = Message;
 class NewJobMessage extends Message {
-    constructor(payload) {
-        super(payload, (0, commit_hash_1.nullCommitHash)());
+    constructor(payload, jobId) {
+        super(payload, (0, commit_hash_1.nullCommitHash)(), jobId);
     }
     getKey() {
         return new message_key_1.MessageKey('🈺');
@@ -1479,26 +1494,28 @@ class Queue {
         return __awaiter(this, void 0, void 0, function* () {
             const latestMessage = this.getLatestMessage();
             this.guardThatLastMessageWasJobFinishedOrNull(latestMessage);
-            const message = new message_1.NewJobMessage(payload);
+            const newJobId = latestMessage.isNull() ? 0 : latestMessage.jobId() + 1;
+            const message = new message_1.NewJobMessage(payload, newJobId);
             const commit = yield this.commitMessage(message);
-            const newJobId = 0; //latestMessage.isNull() ? 0 : latestMessage.getIdFromMessage() + 1
             return new job_1.Job(payload, commit.hash, newJobId);
         });
     }
     markJobAsStarted(payload) {
         return __awaiter(this, void 0, void 0, function* () {
-            this.guardThatLastMessageWasNewJob(this.getLatestMessage());
+            const latestMessage = this.getLatestMessage();
+            this.guardThatLastMessageWasNewJob(latestMessage);
             const pendingJob = this.getNextJob();
-            const message = new message_1.JobStartedMessage(payload, pendingJob.getCommitHash());
+            const message = new message_1.JobStartedMessage(payload, pendingJob.getCommitHash(), latestMessage.jobId());
             const commit = yield this.commitMessage(message);
             return commit;
         });
     }
     markJobAsFinished(payload) {
         return __awaiter(this, void 0, void 0, function* () {
+            const latestMessage = this.getLatestMessage();
             this.guardThatLastMessageWasJobStarted(this.getLatestMessage());
             const pendingJob = this.getNextJob();
-            const message = new message_1.JobFinishedMessage(payload, pendingJob.getCommitHash());
+            const message = new message_1.JobFinishedMessage(payload, pendingJob.getCommitHash(), latestMessage.jobId());
             const commit = yield this.commitMessage(message);
             return commit;
         });

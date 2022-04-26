@@ -5,12 +5,12 @@ import {NO_JOB_ID} from './job'
 export abstract class Message {
   payload: string
   jobRef: CommitHash
-  id: Number
+  id: number
 
   constructor(
     payload: string,
     jobRef: CommitHash = nullCommitHash(),
-    id = NO_JOB_ID
+    id: number
   ) {
     this.payload = payload
     this.jobRef = jobRef
@@ -25,7 +25,7 @@ export abstract class Message {
     return this.jobRef
   }
 
-  getId(): Number {
+  getId(): number {
     return this.id
   }
 
@@ -41,8 +41,8 @@ export abstract class Message {
 }
 
 export class NewJobMessage extends Message {
-  constructor(payload: string) {
-    super(payload, nullCommitHash())
+  constructor(payload: string, jobId: number) {
+    super(payload, nullCommitHash(), jobId)
   }
 
   getKey(): MessageKey {

@@ -72,7 +72,7 @@ describe('Job', () => {
     const commitInfo = new CommitInfo(
       new CommitHash('ad5cea6308f69d7955d8de5f0da19f675d5ba75f'),
       'date',
-      'message',
+      '📝🈺: queue-name: job.id.1 job.ref.f1a69d48a01cc130a64aeac5eaf762e4ba685de7',
       'refs',
       dummyCommitBodyText(),
       'author name',
